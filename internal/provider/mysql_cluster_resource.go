@@ -31,6 +31,7 @@ type mysqlClusterModel struct {
 	Size              types.String `tfsdk:"size"`
 	Version           types.String `tfsdk:"version"`
 	CloudProfileNames types.List   `tfsdk:"cloud_profile_names"`
+	Region            types.String `tfsdk:"region"`
 	ShardCount        types.Int64  `tfsdk:"shard_count"`
 	EncryptDisk       types.Bool   `tfsdk:"encrypt_disk"`
 	EnableSSL         types.Bool   `tfsdk:"enable_ssl"`
@@ -92,7 +93,8 @@ func (r *mysqlClusterResource) Create(ctx context.Context, req resource.CreateRe
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	poolIDs, err := resolveProfiles(ctx, r.client, profileNames)
+	nodeCount := nodesPerCluster(int(plan.ShardCount.ValueInt64()), int(plan.ReplicaCount.ValueInt64()))
+	poolIDs, err := resolveMachinePools(ctx, r.client, client.DBMySQL, profileNames, plan.Region.ValueString(), nodeCount)
 	if err != nil {
 		resp.Diagnostics.AddError("Error resolving cloud profiles", err.Error())
 		return

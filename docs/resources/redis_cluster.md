@@ -42,7 +42,6 @@ resource "scalegrid_redis_cluster" "ha" {
 
 ### Required
 
-- `cloud_profile_names` (List of String) Names of the ScaleGrid cloud profiles to deploy nodes into (one per node across shards). Required for all plans: a shared profile for Dedicated (ScaleGrid-hosted) plans, or your own profile for Bring Your Own Cloud. Look them up with the `scalegrid_cloud_profile` data source.
 - `name` (String) Unique name of the cluster.
 - `size` (String) Instance size tier: `Micro`, `Small`, `Medium`, `Large`, `XLarge`, `X2XLarge`, or `X4XLarge`. Changing this scales the cluster in place.
 - `version` (String) Database engine version. Use the `scalegrid_database_versions` data source to discover valid values.
@@ -50,10 +49,12 @@ resource "scalegrid_redis_cluster" "ha" {
 ### Optional
 
 - `backup_interval_hours` (Number) Scheduled backup interval in hours, one of 1, 3, 6, 12, or 24 (0 disables).
+- `cloud_profile_names` (List of String) Names of the ScaleGrid cloud profiles to deploy nodes into, one per node across shards. Optional: omit it on a Dedicated (shared, ScaleGrid-hosted) plan and the provider selects the shared profile for this engine automatically (set `region` to disambiguate when more than one matches). For Bring Your Own Cloud, supply your own profile name(s); a single name is reused for every node. Look them up with the `scalegrid_cloud_profile` data source.
 - `cluster_mode` (Boolean) Enable Redis cluster mode (requires 3 or 4 shards).
 - `enable_ssl` (Boolean) Enable SSL/TLS for client connections.
 - `encrypt_disk` (Boolean) Encrypt the data disk.
 - `paused` (Boolean) Whether the cluster is paused. Toggling this pauses or resumes the cluster in place. Note: pause/resume is only supported for Bring Your Own Cloud (BYOC) deployments.
+- `region` (String) Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted, e.g. `useast1`. Ignored when `cloud_profile_names` is set.
 - `sentinel_count` (Number) Number of sentinel nodes (master/slave deployments).
 - `server_count` (Number) Nodes per shard. 1 for standalone.
 - `shard_count` (Number) Number of shards. 1 for standalone/replica set; more for sharded.

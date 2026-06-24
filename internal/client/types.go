@@ -259,6 +259,8 @@ type CloudProfile struct {
 	Name       string `json:"providerMachinePoolName,omitempty"`
 	DBType     string `json:"dbType,omitempty"`
 	Type       string `json:"type,omitempty"` // EC2, AZUREARM, DIGITALOCEAN
+	Region     string `json:"region,omitempty"`
+	RegionDesc string `json:"regionDesc,omitempty"`
 	Status     string `json:"status,omitempty"`
 	Shared     bool   `json:"shared,omitempty"`
 	ConfigJSON string `json:"configJSON,omitempty"`

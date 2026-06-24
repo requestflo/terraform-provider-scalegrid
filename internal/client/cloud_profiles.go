@@ -30,6 +30,54 @@ func (c *Client) FindCloudProfileByName(ctx context.Context, name string) (*Clou
 	return nil, &APIError{Code: "NotFound", Message: fmt.Sprintf("cloud profile %q was not found", name)}
 }
 
+// FindSharedCloudProfile locates the ScaleGrid-hosted (shared / Dedicated)
+// cloud profile for the given engine, optionally narrowed to a region. It backs
+// cluster creation when no cloud_profile_names are supplied: shared profiles are
+// provisioned by ScaleGrid, so the user need not name one. The match is exactly
+// one profile; an empty or ambiguous result is returned as an error explaining
+// how to disambiguate.
+func (c *Client) FindSharedCloudProfile(ctx context.Context, db DBType, region string) (*CloudProfile, error) {
+	profiles, err := c.ListCloudProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	want := db.WireType()
+	var matches []CloudProfile
+	for i := range profiles {
+		p := profiles[i]
+		if !p.Shared {
+			continue
+		}
+		if p.DBType != "" && !strings.EqualFold(p.DBType, want) {
+			continue
+		}
+		if region != "" && !strings.EqualFold(p.Region, region) && !strings.EqualFold(p.RegionDesc, region) {
+			continue
+		}
+		matches = append(matches, p)
+	}
+	switch len(matches) {
+	case 1:
+		return &matches[0], nil
+	case 0:
+		hint := ""
+		if region != "" {
+			hint = fmt.Sprintf(" in region %q", region)
+		}
+		return nil, &APIError{Code: "NotFound", Message: fmt.Sprintf(
+			"no shared (Dedicated) cloud profile found for %s%s; set `region` to a supported region "+
+				"or supply `cloud_profile_names` explicitly", db, hint)}
+	default:
+		labels := make([]string, 0, len(matches))
+		for _, m := range matches {
+			labels = append(labels, fmt.Sprintf("%q (%s)", m.Name, m.Region))
+		}
+		return nil, &APIError{Code: "Ambiguous", Message: fmt.Sprintf(
+			"multiple shared cloud profiles match %s: %s; set `region` to disambiguate "+
+				"or supply `cloud_profile_names` explicitly", db, strings.Join(labels, ", "))}
+	}
+}
+
 // GetCloudProfile fetches a cloud profile by ID.
 func (c *Client) GetCloudProfile(ctx context.Context, id string) (*CloudProfile, error) {
 	profiles, err := c.ListCloudProfiles(ctx)

@@ -57,12 +57,20 @@ func commonClusterAttributes() map[string]schema.Attribute {
 			PlanModifiers: reqReplaceStr(),
 		},
 		"cloud_profile_names": schema.ListAttribute{
-			Required:    true,
+			Optional:    true,
 			ElementType: types.StringType,
-			Description: "Names of the ScaleGrid cloud profiles to deploy nodes into (one per node across " +
-				"shards). Required for all plans: a shared profile for Dedicated (ScaleGrid-hosted) plans, " +
-				"or your own profile for Bring Your Own Cloud. Look them up with the `scalegrid_cloud_profile` data source.",
+			Description: "Names of the ScaleGrid cloud profiles to deploy nodes into, one per node across " +
+				"shards. Optional: omit it on a Dedicated (shared, ScaleGrid-hosted) plan and the provider " +
+				"selects the shared profile for this engine automatically (set `region` to disambiguate when " +
+				"more than one matches). For Bring Your Own Cloud, supply your own profile name(s); a single " +
+				"name is reused for every node. Look them up with the `scalegrid_cloud_profile` data source.",
 			PlanModifiers: []planmodifier.List{listRequiresReplace()},
+		},
+		"region": schema.StringAttribute{
+			Optional: true,
+			Description: "Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` " +
+				"is omitted, e.g. `useast1`. Ignored when `cloud_profile_names` is set.",
+			PlanModifiers: reqReplaceStr(),
 		},
 		"shard_count": schema.Int64Attribute{
 			Optional:      true,
@@ -122,6 +130,57 @@ func resolveProfiles(ctx context.Context, c *client.Client, names []string) ([]s
 		ids = append(ids, profile.ID)
 	}
 	return ids, nil
+}
+
+// resolveMachinePools turns the cloud-profile configuration into the
+// machinePoolIDList the API requires: one ID per node across all shards.
+//
+//   - When names are supplied, they are resolved to IDs. A single name is reused
+//     for every node; multiple names are used verbatim (advanced topologies).
+//   - When names are omitted, the shared (Dedicated) profile for the engine is
+//     discovered automatically (optionally narrowed by region) and reused for
+//     every node, so Dedicated plans need not reference a cloud profile at all.
+func resolveMachinePools(ctx context.Context, c *client.Client, db client.DBType,
+	names []string, region string, nodeCount int) ([]string, error) {
+	if nodeCount < 1 {
+		nodeCount = 1
+	}
+	if len(names) > 0 {
+		ids, err := resolveProfiles(ctx, c, names)
+		if err != nil {
+			return nil, err
+		}
+		if len(ids) == 1 {
+			return repeatID(ids[0], nodeCount), nil
+		}
+		return ids, nil
+	}
+	profile, err := c.FindSharedCloudProfile(ctx, db, region)
+	if err != nil {
+		return nil, err
+	}
+	return repeatID(profile.ID, nodeCount), nil
+}
+
+// repeatID returns a slice with id repeated n times.
+func repeatID(id string, n int) []string {
+	ids := make([]string, n)
+	for i := range ids {
+		ids[i] = id
+	}
+	return ids
+}
+
+// nodesPerCluster computes the number of nodes (one machine pool ID each) a
+// cluster needs: shards times nodes-per-shard, each defaulting to 1.
+func nodesPerCluster(shardCount, perShard int) int {
+	if shardCount < 1 {
+		shardCount = 1
+	}
+	if perShard < 1 {
+		perShard = 1
+	}
+	return shardCount * perShard
 }
 
 // clusterComputed holds the read-only values mapped back from the API.
