@@ -16,7 +16,8 @@ func (c *Client) GetFirewallRules(ctx context.Context, db DBType, clusterID stri
 }
 
 // SetFirewallRules replaces the cluster-level IP whitelist. The console requires
-// two calls: one to record the cluster-level list and one to apply it.
+// two calls: one to record the cluster-level list and one to apply it. Applying
+// is asynchronous, so this waits for the resulting action to complete.
 func (c *Client) SetFirewallRules(ctx context.Context, db DBType, clusterID string, cidrs []string) error {
 	if cidrs == nil {
 		cidrs = []string{}
@@ -25,5 +26,9 @@ func (c *Client) SetFirewallRules(ctx context.Context, db DBType, clusterID stri
 	if err := c.do(ctx, http.MethodPost, "/Clusters/setClusterLevelIPWhiteList", body, nil); err != nil {
 		return err
 	}
-	return c.do(ctx, http.MethodPost, "/Clusters/configureIPWhiteList", body, nil)
+	var resp asyncResponse
+	if err := c.do(ctx, http.MethodPost, "/Clusters/configureIPWhiteList", body, &resp); err != nil {
+		return err
+	}
+	return c.WaitForAction(ctx, resp.ActionID, 0)
 }

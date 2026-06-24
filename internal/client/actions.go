@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -13,7 +14,8 @@ func (c *Client) GetAction(ctx context.Context, actionID string) (*Action, error
 	if err := c.do(ctx, http.MethodGet, "/actions/"+actionID, nil, &resp); err != nil {
 		return nil, err
 	}
-	return &resp.Action, nil
+	action := resp.action()
+	return &action, nil
 }
 
 // WaitForAction polls an action until it completes or fails. A blank actionID is
@@ -34,15 +36,13 @@ func (c *Client) WaitForAction(ctx context.Context, actionID string, pollInterva
 		if err != nil {
 			return err
 		}
-		switch action.Status {
-		case ActionCompleted:
+		// The API reports status as Running/Completed/Failed; compare
+		// case-insensitively to be resilient to casing changes.
+		switch {
+		case strings.EqualFold(action.Status, ActionCompleted):
 			return nil
-		case ActionFailed:
-			msg := action.StepError.ErrorMessageWithDetails
-			if msg == "" {
-				msg = "job failed"
-			}
-			return fmt.Errorf("scalegrid: action %s failed: %s", actionID, msg)
+		case strings.EqualFold(action.Status, ActionFailed) || action.Cancelled:
+			return fmt.Errorf("scalegrid: action %s failed: %s", actionID, action.failureMessage())
 		}
 
 		select {

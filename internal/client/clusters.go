@@ -39,7 +39,6 @@ func buildCreateBody(in CreateClusterInput) (map[string]any, error) {
 			"size":              in.Size,
 			"version":           strings.ToUpper(in.Version),
 			"machinePoolIDList": in.MachinePoolIDs,
-			"enableAuth":        true,
 			"engine":            defaultStr(in.MongoEngine, "wiredtiger"),
 			"enableSSL":         in.EnableSSL,
 			"encryptDisk":       in.EncryptDisk,
@@ -47,40 +46,28 @@ func buildCreateBody(in CreateClusterInput) (map[string]any, error) {
 		if in.CompressionAlgo != "" {
 			body["compressionAlgo"] = in.CompressionAlgo
 		}
-		return body, nil
-
-	case DBRedis:
-		redisConfig := map[string]any{}
-		if in.EnableRDB {
-			redisConfig["save"] = map[string]any{"value": "900 1 300 10 60 10000", "split": 0}
-		} else {
-			redisConfig["save"] = map[string]any{"value": "", "split": 0}
-		}
-		if in.EnableAOF {
-			redisConfig["appendonly"] = map[string]any{"value": "yes", "split": 0}
-		} else {
-			redisConfig["appendonly"] = map[string]any{"value": "no", "split": 0}
-		}
-		redisConfig["maxmemory-policy"] = map[string]any{"value": defaultStr(in.MaxMemoryPolicy, "noeviction"), "split": 0}
-
-		body := map[string]any{
-			"clusterName":           in.Name,
-			"version":               strings.ToUpper(in.Version),
-			"size":                  in.Size,
-			"serverCount":           in.ServerCount,
-			"shardCount":            in.ShardCount,
-			"machinePoolIDList":     in.MachinePoolIDs,
-			"clusterMode":           in.ClusterMode,
-			"backupIntervalInHours": in.BackupIntervalInHours,
-			"encryptDisk":           in.EncryptDisk,
-			"sentinelCount":         in.SentinelCount,
-			"redisConfigParams":     redisConfig,
-		}
 		if len(in.CIDRList) > 0 {
 			body["cidrList"] = in.CIDRList
 		}
-		if len(in.SentinelPools) > 0 {
-			body["sentinelMachinePool"] = in.SentinelPools
+		return body, nil
+
+	case DBRedis:
+		body := map[string]any{
+			"clusterName":       in.Name,
+			"version":           strings.ToUpper(in.Version),
+			"size":              in.Size,
+			"serverCount":       in.ServerCount,
+			"shardCount":        in.ShardCount,
+			"machinePoolIDList": in.MachinePoolIDs,
+			"clusterMode":       in.ClusterMode,
+			"sentinelCount":     in.SentinelCount,
+			"encryptDisk":       in.EncryptDisk,
+		}
+		if in.BackupIntervalInHours > 0 {
+			body["backupIntervalInHours"] = in.BackupIntervalInHours
+		}
+		if len(in.CIDRList) > 0 {
+			body["cidrList"] = in.CIDRList
 		}
 		return body, nil
 
@@ -93,7 +80,6 @@ func buildCreateBody(in CreateClusterInput) (map[string]any, error) {
 			"version":           strings.ToLower(in.Version),
 			"machinePoolIDList": in.MachinePoolIDs,
 			"replicaConfig":     in.ReplicaConfig,
-			"enableAuth":        true,
 			"engine":            "INNODB",
 			"enableSSL":         in.EnableSSL,
 			"encryptDisk":       in.EncryptDisk,
@@ -109,9 +95,8 @@ func buildCreateBody(in CreateClusterInput) (map[string]any, error) {
 			"shardCount":        in.ShardCount,
 			"replicaCount":      in.ReplicaCount,
 			"size":              in.Size,
-			"version":           in.Version,
+			"version":           strings.ToUpper(in.Version),
 			"machinePoolIDList": in.MachinePoolIDs,
-			"enableAuth":        true,
 			"enableSSL":         in.EnableSSL,
 			"encryptDisk":       in.EncryptDisk,
 			"enablePgBouncer":   in.EnablePgBouncer,
@@ -133,7 +118,7 @@ func buildCreateBody(in CreateClusterInput) (map[string]any, error) {
 // GetCluster fetches a single cluster by ID.
 func (c *Client) GetCluster(ctx context.Context, db DBType, id string) (*Cluster, error) {
 	var resp clusterFetchResponse
-	path := fmt.Sprintf("/%s/%s/fetch", db.PathPrefix(), id)
+	path := fmt.Sprintf("/%s/%s/fetch", db.listPrefix(), id)
 	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, err
 	}
@@ -146,11 +131,11 @@ func (c *Client) GetCluster(ctx context.Context, db DBType, id string) (*Cluster
 // ListClusters returns all clusters of the given engine.
 func (c *Client) ListClusters(ctx context.Context, db DBType) ([]Cluster, error) {
 	var resp clusterListResponse
-	path := "/" + db.PathPrefix() + "/list"
+	path := "/" + db.listPrefix() + "/list"
 	if err := c.do(ctx, http.MethodGet, path, nil, &resp); err != nil {
 		return nil, err
 	}
-	return resp.Clusters, nil
+	return resp.clusters(), nil
 }
 
 // FindClusterByName looks up a cluster of the given engine by name.
@@ -171,7 +156,7 @@ func (c *Client) FindClusterByName(ctx context.Context, db DBType, name string) 
 // are removed as well.
 func (c *Client) DeleteCluster(ctx context.Context, db DBType, id string, deleteVMs bool) (string, error) {
 	var resp asyncResponse
-	path := fmt.Sprintf("/%s/%s", db.PathPrefix(), id)
+	path := fmt.Sprintf("/%s/%s", db.listPrefix(), id)
 	body := map[string]any{"skipVMDeletion": !deleteVMs}
 	if err := c.do(ctx, http.MethodDelete, path, body, &resp); err != nil {
 		return "", err
@@ -182,8 +167,12 @@ func (c *Client) DeleteCluster(ctx context.Context, db DBType, id string, delete
 // ScaleCluster changes the cluster size in place.
 func (c *Client) ScaleCluster(ctx context.Context, db DBType, id, newSize string) (string, error) {
 	var resp asyncResponse
-	path := "/" + db.PathPrefix() + "/scale"
+	path := "/" + db.listPrefix() + "/scale"
 	body := map[string]any{"id": id, "newSize": newSize}
+	if db == DBPostgreSQL {
+		// The PostgreSQL scale endpoint reads the size from "Size".
+		body["Size"] = newSize
+	}
 	if err := c.do(ctx, http.MethodPost, path, body, &resp); err != nil {
 		return "", err
 	}
@@ -212,12 +201,22 @@ func (c *Client) clusterPowerAction(ctx context.Context, path string, db DBType,
 // GetCredentials returns the root credentials and connection strings.
 func (c *Client) GetCredentials(ctx context.Context, db DBType, id string) (*Credentials, error) {
 	var credResp credentialsResponse
-	credPath := fmt.Sprintf("/%s/%s/getCredentials", db.PathPrefix(), id)
+	credPath := fmt.Sprintf("/%s/%s/getCredentials", db.listPrefix(), id)
 	if err := c.do(ctx, http.MethodGet, credPath, nil, &credResp); err != nil {
 		return nil, err
 	}
 
 	creds := &Credentials{User: credResp.User, Password: credResp.Password}
+	// Only MongoDB and PostgreSQL return a username; fill in the well-known
+	// default admin user for the others.
+	if creds.User == "" {
+		switch db {
+		case DBMySQL:
+			creds.User = "sgroot"
+		case DBPostgreSQL:
+			creds.User = "sgpostgres"
+		}
+	}
 
 	cluster, err := c.GetCluster(ctx, db, id)
 	if err == nil {

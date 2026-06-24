@@ -8,8 +8,8 @@ import (
 )
 
 // GetDatabaseVersions returns the available database versions for an engine and
-// cloud provider. cloudProvider should be one of AWS, AZURE, or DO.
-func (c *Client) GetDatabaseVersions(ctx context.Context, db DBType, cloudProvider string) (map[string]string, error) {
+// cloud provider. cloudProvider should be one of AWS, AZURE, DO, or GCP.
+func (c *Client) GetDatabaseVersions(ctx context.Context, db DBType, cloudProvider string) ([]string, error) {
 	cloud, err := normalizeCloudProvider(cloudProvider)
 	if err != nil {
 		return nil, err
@@ -34,7 +34,9 @@ func normalizeCloudProvider(s string) (string, error) {
 		return "AZUREARM", nil
 	case "DO", "do", "digitalocean", "DIGITALOCEAN":
 		return "DIGITALOCEAN", nil
+	case "GCP", "gcp", "google":
+		return "GCP", nil
 	default:
-		return "", fmt.Errorf("scalegrid: unsupported cloud provider %q (use AWS, AZURE, or DO)", s)
+		return "", fmt.Errorf("scalegrid: unsupported cloud provider %q (use AWS, AZURE, DO, or GCP)", s)
 	}
 }

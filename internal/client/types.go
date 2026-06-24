@@ -1,6 +1,33 @@
 package client
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
+
+// rawID converts a JSON value that may be a number or a quoted string into a
+// plain string. The ScaleGrid API returns most IDs as integers, but the
+// provider tracks them as strings.
+func rawID(raw json.RawMessage) string {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" {
+		return ""
+	}
+	s = strings.TrimPrefix(s, `"`)
+	s = strings.TrimSuffix(s, `"`)
+	return s
+}
+
+// rawBool decodes a JSON value that may be a boolean or a quoted string
+// ("true"/"yes"/"1") into a bool. Absent or unrecognised values yield false.
+func rawBool(raw json.RawMessage) bool {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(string(raw)), `"`)) {
+	case "true", "yes", "1":
+		return true
+	default:
+		return false
+	}
+}
 
 // DBType identifies a database engine. The string value is the path prefix used
 // by the console API (e.g. "Mongo" -> /MongoClusters/...). The wire value sent
@@ -14,8 +41,20 @@ const (
 	DBPostgreSQL DBType = "PostgreSQL"
 )
 
-// PathPrefix returns the cluster endpoint prefix, e.g. "MongoClusters".
+// PathPrefix returns the canonical cluster endpoint prefix, e.g. "MongoClusters".
+// PostgreSQL uses this capitalized form for a handful of endpoints (create,
+// deletebackup, getBackupSchedule, enablePgBouncer).
 func (d DBType) PathPrefix() string { return string(d) + "Clusters" }
+
+// listPrefix returns the prefix used by the bulk of per-cluster operations
+// (list, fetch, scale, delete, getCredentials, backup, restore). PostgreSQL
+// serves these from an all-lowercase path, unlike the other engines.
+func (d DBType) listPrefix() string {
+	if d == DBPostgreSQL {
+		return "postgresqlclusters"
+	}
+	return string(d) + "Clusters"
+}
 
 // WireType returns the upper-cased dbType value used in generic request bodies
 // (MONGODB, REDIS, MYSQL, POSTGRESQL).
@@ -89,15 +128,54 @@ type Cluster struct {
 	CommandLineServer string             `json:"commandLineServer,omitempty"`
 }
 
+// UnmarshalJSON decodes a Cluster, tolerating the API's quirks: numeric IDs
+// (returned as JSON integers) and a connectionString field that is an array on
+// some endpoints and an object on others.
+func (c *Cluster) UnmarshalJSON(data []byte) error {
+	type alias Cluster
+	aux := struct {
+		ID                json.RawMessage `json:"id"`
+		ConnectionString  json.RawMessage `json:"connectionString"`
+		SSLEnabled        json.RawMessage `json:"sslEnabled"`
+		EncryptionEnabled json.RawMessage `json:"encryptionEnabled"`
+		*alias
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	c.ID = rawID(aux.ID)
+	// sslEnabled/encryptionEnabled come back as booleans on most endpoints but as
+	// strings on a few list responses; accept either.
+	c.SSLEnabled = rawBool(aux.SSLEnabled)
+	c.EncryptionEnabled = rawBool(aux.EncryptionEnabled)
+	c.ConnectionString = nil
+	if len(aux.ConnectionString) > 0 && aux.ConnectionString[0] == '[' {
+		// Only the array form carries the driver-specific connection strings we
+		// surface; the object form (used by some fetch endpoints) is ignored.
+		_ = json.Unmarshal(aux.ConnectionString, &c.ConnectionString)
+	}
+	return nil
+}
+
 // ConnectionString is one driver-specific connection string for a cluster.
 type ConnectionString struct {
 	Driver  string `json:"driver,omitempty"`
 	ConnStr string `json:"conString,omitempty"`
 }
 
-// clusterListResponse wraps GET /{Db}Clusters/list.
+// clusterListResponse wraps GET /{Db}Clusters/list. Mongo, Redis and MySQL
+// return the array under "cluster" (singular); PostgreSQL uses "clusters".
 type clusterListResponse struct {
+	Cluster  []Cluster `json:"cluster"`
 	Clusters []Cluster `json:"clusters"`
+}
+
+// clusters returns whichever key the engine populated.
+func (r clusterListResponse) clusters() []Cluster {
+	if len(r.Clusters) > 0 {
+		return r.Clusters
+	}
+	return r.Cluster
 }
 
 // clusterFetchResponse wraps GET /{Db}Clusters/{id}/fetch.
@@ -105,11 +183,41 @@ type clusterFetchResponse struct {
 	Cluster Cluster `json:"cluster"`
 }
 
-// asyncResponse carries the IDs returned by mutating endpoints.
+// asyncResponse carries the IDs returned by mutating endpoints. The API returns
+// these as integers, and is inconsistent about casing (actionID vs actionId,
+// machinePoolID vs machinePoolId), so we decode every spelling.
 type asyncResponse struct {
-	ClusterID     string `json:"clusterID,omitempty"`
-	MachinePoolID string `json:"machinePoolID,omitempty"`
-	ActionID      string `json:"actionID,omitempty"`
+	ClusterID     string
+	MachinePoolID string
+	ActionID      string
+}
+
+func (a *asyncResponse) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		ClusterIDUpper     json.RawMessage `json:"clusterID"`
+		ClusterIDLower     json.RawMessage `json:"clusterId"`
+		MachinePoolIDUpper json.RawMessage `json:"machinePoolID"`
+		MachinePoolIDLower json.RawMessage `json:"machinePoolId"`
+		ActionIDUpper      json.RawMessage `json:"actionID"`
+		ActionIDLower      json.RawMessage `json:"actionId"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	a.ClusterID = firstRawID(aux.ClusterIDUpper, aux.ClusterIDLower)
+	a.MachinePoolID = firstRawID(aux.MachinePoolIDUpper, aux.MachinePoolIDLower)
+	a.ActionID = firstRawID(aux.ActionIDUpper, aux.ActionIDLower)
+	return nil
+}
+
+// firstRawID returns the first non-empty decoded ID from the candidates.
+func firstRawID(raws ...json.RawMessage) string {
+	for _, raw := range raws {
+		if id := rawID(raw); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // CreateClusterInput is the engine-agnostic input the provider supplies. The
@@ -124,7 +232,6 @@ type CreateClusterInput struct {
 	ServerCount    int // redis nodes per shard
 	SentinelCount  int // redis
 	MachinePoolIDs []string
-	SentinelPools  []string
 	EncryptDisk    bool
 	EnableSSL      bool
 	CIDRList       []string
@@ -136,9 +243,6 @@ type CreateClusterInput struct {
 	// Redis
 	ClusterMode           bool
 	BackupIntervalInHours int
-	MaxMemoryPolicy       string
-	EnableRDB             bool
-	EnableAOF             bool
 
 	// MySQL
 	ReplicaConfig int
@@ -158,6 +262,20 @@ type CloudProfile struct {
 	Status     string `json:"status,omitempty"`
 	Shared     bool   `json:"shared,omitempty"`
 	ConfigJSON string `json:"configJSON,omitempty"`
+}
+
+// UnmarshalJSON decodes a CloudProfile, converting the numeric id to a string.
+func (p *CloudProfile) UnmarshalJSON(data []byte) error {
+	type alias CloudProfile
+	aux := struct {
+		ID json.RawMessage `json:"id"`
+		*alias
+	}{alias: (*alias)(p)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	p.ID = rawID(aux.ID)
+	return nil
 }
 
 // CloudType returns a friendly cloud name (AWS for EC2).
@@ -189,14 +307,32 @@ type CreateAWSCloudProfileInput struct {
 	EnableSSH          bool
 }
 
-// Backup represents a cluster backup.
+// Backup represents a cluster backup. The API returns created as a string Unix
+// timestamp, and id/object_id as integers.
 type Backup struct {
 	ID       string `json:"id,omitempty"`
 	Name     string `json:"name,omitempty"`
 	ObjectID string `json:"object_id,omitempty"`
-	Created  int64  `json:"created,omitempty"`
+	Created  string `json:"created,omitempty"`
 	Type     string `json:"type,omitempty"`
 	Comment  string `json:"comment,omitempty"`
+}
+
+// UnmarshalJSON decodes a Backup, converting the numeric id and object_id to
+// strings.
+func (b *Backup) UnmarshalJSON(data []byte) error {
+	type alias Backup
+	aux := struct {
+		ID       json.RawMessage `json:"id"`
+		ObjectID json.RawMessage `json:"object_id"`
+		*alias
+	}{alias: (*alias)(b)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	b.ID = rawID(aux.ID)
+	b.ObjectID = rawID(aux.ObjectID)
+	return nil
 }
 
 type backupListResponse struct {
@@ -235,29 +371,53 @@ type alertRuleCreateResponse struct {
 	Rule AlertRule `json:"rule"`
 }
 
-// Action is the status of an asynchronous job.
+// Action is the status of an asynchronous job. Per the API the fields are
+// returned at the top level of GET /actions/{id}, with the failure reason in the
+// standard "error" object.
 type Action struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Progress  int64  `json:"progress,omitempty"`
-	Cancelled bool   `json:"cancelled,omitempty"`
+	ID        string  `json:"id,omitempty"`
+	Name      string  `json:"name,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	Progress  int64   `json:"progress,omitempty"`
+	Cancelled bool    `json:"cancelled,omitempty"`
+	Error     sgError `json:"error,omitempty"`
 	StepError struct {
 		ErrorMessageWithDetails string `json:"errorMessageWithDetails"`
 		RecommendedAction       string `json:"recommendedAction"`
 	} `json:"stepError,omitempty"`
 }
 
-type actionResponse struct {
-	Action Action `json:"action"`
+// failureMessage returns the best available description of a failed action.
+func (a Action) failureMessage() string {
+	if a.StepError.ErrorMessageWithDetails != "" {
+		return a.StepError.ErrorMessageWithDetails
+	}
+	if msg := a.Error.message(); msg != "" {
+		return msg
+	}
+	return "job failed"
 }
 
-// Action status values.
+// actionResponse tolerates both the documented top-level shape and a nested
+// "action" object, returning whichever carries a status.
+type actionResponse struct {
+	Action
+	Nested *Action `json:"action"`
+}
+
+// action returns the populated action from whichever shape was returned.
+func (r actionResponse) action() Action {
+	if r.Nested != nil && r.Nested.Status != "" {
+		return *r.Nested
+	}
+	return r.Action
+}
+
+// Action status values, as returned by GET /actions/{id}.
 const (
-	ActionInitiating = "initiating"
-	ActionRunning    = "running"
-	ActionCompleted  = "completed"
-	ActionFailed     = "failed"
+	ActionRunning   = "Running"
+	ActionCompleted = "Completed"
+	ActionFailed    = "Failed"
 )
 
 // firewallResponse wraps the cluster-level IP whitelist.
@@ -265,7 +425,8 @@ type firewallResponse struct {
 	CIDRList []string `json:"cidrList"`
 }
 
-// DatabaseVersions maps version identifiers to display strings.
+// databaseVersionsResponse wraps GET /Clusters/getDatabaseActiveVersions. The
+// API returns a plain array of supported version identifiers.
 type databaseVersionsResponse struct {
-	Versions map[string]string `json:"versions"`
+	Versions []string `json:"versions"`
 }

@@ -67,9 +67,10 @@ func (r *alertRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 			},
 			"type": schema.StringAttribute{
 				Required:      true,
-				Description:   "Alert rule type: `METRIC`, `DISK_FREE`, or `ROLE_CHANGE`.",
+				Description:   "Alert rule type: `METRIC`, `USER`, `BILLING`, `BACKUP`, `DISK_FREE`, or `ROLE_CHANGE`.",
 				PlanModifiers: reqReplaceStr(),
-				Validators:    []validator.String{stringvalidator.OneOf("METRIC", "DISK_FREE", "ROLE_CHANGE")},
+				Validators: []validator.String{stringvalidator.OneOf(
+					"METRIC", "USER", "BILLING", "BACKUP", "DISK_FREE", "ROLE_CHANGE")},
 			},
 			"metric": schema.StringAttribute{
 				Optional:      true,
@@ -94,9 +95,10 @@ func (r *alertRuleResource) Schema(_ context.Context, _ resource.SchemaRequest, 
 				Validators:    []validator.String{stringvalidator.OneOf("TWO", "SIX", "HOURLY", "DAILY")},
 			},
 			"notifications": schema.ListAttribute{
-				Required:      true,
-				ElementType:   types.StringType,
-				Description:   "Notification channels: `EMAIL`, `SMS`, `PAGERDUTY`.",
+				Required:    true,
+				ElementType: types.StringType,
+				Description: "Notification channels: `EMAIL`, `SMS`, `PAGERDUTY`, `SLACK`, " +
+					"`OPSGENIE`, or `XMATTERS`.",
 				PlanModifiers: []planmodifier.List{listRequiresReplace()},
 			},
 		},
@@ -202,7 +204,7 @@ func (r *alertRuleResource) Delete(ctx context.Context, req resource.DeleteReque
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	if err := r.client.DeleteAlertRule(ctx, state.ID.ValueString(), true); err != nil {
+	if err := r.client.DeleteAlertRule(ctx, state.ID.ValueString()); err != nil {
 		if client.IsNotFound(err) {
 			return
 		}
