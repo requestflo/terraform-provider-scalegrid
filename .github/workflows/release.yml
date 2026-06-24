@@ -44,7 +44,7 @@ jobs:
             -p @semantic-release/git \
             -p @semantic-release/exec \
             semantic-release --dry-run 2>&1 | tee /tmp/sr-dry.log || true
-          if grep -q "The next release version is" /tmp/sr-dry.log; then
+          if grep -qi "next release version is" /tmp/sr-dry.log; then
             echo "release=true" >> "$GITHUB_OUTPUT"
           else
             echo "release=false" >> "$GITHUB_OUTPUT"
