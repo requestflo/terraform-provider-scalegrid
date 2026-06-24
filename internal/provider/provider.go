@@ -114,7 +114,10 @@ func (p *ScaleGridProvider) Configure(ctx context.Context, req provider.Configur
 
 func (p *ScaleGridProvider) Resources(_ context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewClusterResource,
+		NewMongoClusterResource,
+		NewRedisClusterResource,
+		NewMySQLClusterResource,
+		NewPostgreSQLClusterResource,
 		NewCloudProfileResource,
 		NewFirewallResource,
 		NewAlertRuleResource,

@@ -88,7 +88,8 @@ func TestCreateClusterMongo(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
 		_ = json.NewDecoder(r.Body).Decode(&gotBody)
-		writeEnvelope(w, map[string]any{"clusterID": "c-123", "actionID": "a-1"})
+		// The API returns IDs as JSON integers.
+		writeEnvelope(w, map[string]any{"clusterID": 123, "actionID": 1})
 	}))
 	defer srv.Close()
 	c := newTestClient(t, srv)
@@ -100,7 +101,7 @@ func TestCreateClusterMongo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateCluster: %v", err)
 	}
-	if id != "c-123" || action != "a-1" {
+	if id != "123" || action != "1" {
 		t.Errorf("unexpected ids: %q %q", id, action)
 	}
 	if gotPath != "/MongoClusters/create" {
@@ -109,8 +110,50 @@ func TestCreateClusterMongo(t *testing.T) {
 	if gotBody["clusterName"] != "prod" || gotBody["version"] != "7.0" {
 		t.Errorf("unexpected body: %+v", gotBody)
 	}
-	if gotBody["enableAuth"] != true {
-		t.Errorf("expected enableAuth true: %+v", gotBody)
+	// enableAuth is not part of the documented API and must not be sent.
+	if _, ok := gotBody["enableAuth"]; ok {
+		t.Errorf("enableAuth should not be present: %+v", gotBody)
+	}
+	if gotBody["engine"] != "wiredtiger" {
+		t.Errorf("expected engine wiredtiger: %+v", gotBody)
+	}
+}
+
+// TestListClustersKeyAndIntegerIDs verifies the singular "cluster" list key and
+// integer-ID decoding used by Mongo/Redis/MySQL, and the lowercase PostgreSQL
+// list path with its "clusters" key.
+func TestListClustersKeyAndIntegerIDs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/MongoClusters/list":
+			writeEnvelope(w, map[string]any{"cluster": []map[string]any{
+				{"id": 42, "name": "m"},
+			}})
+		case "/postgresqlclusters/list":
+			writeEnvelope(w, map[string]any{"clusters": []map[string]any{
+				{"id": 7, "name": "p"},
+			}})
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	mongo, err := c.ListClusters(context.Background(), DBMongo)
+	if err != nil {
+		t.Fatalf("ListClusters mongo: %v", err)
+	}
+	if len(mongo) != 1 || mongo[0].ID != "42" || mongo[0].Name != "m" {
+		t.Errorf("unexpected mongo clusters: %+v", mongo)
+	}
+
+	pg, err := c.ListClusters(context.Background(), DBPostgreSQL)
+	if err != nil {
+		t.Fatalf("ListClusters pg: %v", err)
+	}
+	if len(pg) != 1 || pg[0].ID != "7" {
+		t.Errorf("unexpected pg clusters: %+v", pg)
 	}
 }
 
@@ -194,6 +237,12 @@ func TestFirewallRoundTrip(t *testing.T) {
 func TestDBTypeHelpers(t *testing.T) {
 	if DBMongo.PathPrefix() != "MongoClusters" {
 		t.Errorf("path prefix: %s", DBMongo.PathPrefix())
+	}
+	if DBPostgreSQL.listPrefix() != "postgresqlclusters" {
+		t.Errorf("pg list prefix: %s", DBPostgreSQL.listPrefix())
+	}
+	if DBMongo.listPrefix() != "MongoClusters" {
+		t.Errorf("mongo list prefix: %s", DBMongo.listPrefix())
 	}
 	if DBMongo.WireType() != "MONGODB" {
 		t.Errorf("wire type: %s", DBMongo.WireType())

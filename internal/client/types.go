@@ -1,6 +1,22 @@
 package client
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
+
+// rawID converts a JSON value that may be a number or a quoted string into a
+// plain string. The ScaleGrid API returns most IDs as integers, but the
+// provider tracks them as strings.
+func rawID(raw json.RawMessage) string {
+	s := strings.TrimSpace(string(raw))
+	if s == "" || s == "null" {
+		return ""
+	}
+	s = strings.TrimPrefix(s, `"`)
+	s = strings.TrimSuffix(s, `"`)
+	return s
+}
 
 // DBType identifies a database engine. The string value is the path prefix used
 // by the console API (e.g. "Mongo" -> /MongoClusters/...). The wire value sent
@@ -14,8 +30,20 @@ const (
 	DBPostgreSQL DBType = "PostgreSQL"
 )
 
-// PathPrefix returns the cluster endpoint prefix, e.g. "MongoClusters".
+// PathPrefix returns the canonical cluster endpoint prefix, e.g. "MongoClusters".
+// PostgreSQL uses this capitalized form for a handful of endpoints (create,
+// deletebackup, getBackupSchedule, enablePgBouncer).
 func (d DBType) PathPrefix() string { return string(d) + "Clusters" }
+
+// listPrefix returns the prefix used by the bulk of per-cluster operations
+// (list, fetch, scale, delete, getCredentials, backup, restore). PostgreSQL
+// serves these from an all-lowercase path, unlike the other engines.
+func (d DBType) listPrefix() string {
+	if d == DBPostgreSQL {
+		return "postgresqlclusters"
+	}
+	return string(d) + "Clusters"
+}
 
 // WireType returns the upper-cased dbType value used in generic request bodies
 // (MONGODB, REDIS, MYSQL, POSTGRESQL).
@@ -89,15 +117,48 @@ type Cluster struct {
 	CommandLineServer string             `json:"commandLineServer,omitempty"`
 }
 
+// UnmarshalJSON decodes a Cluster, tolerating the API's quirks: numeric IDs
+// (returned as JSON integers) and a connectionString field that is an array on
+// some endpoints and an object on others.
+func (c *Cluster) UnmarshalJSON(data []byte) error {
+	type alias Cluster
+	aux := struct {
+		ID               json.RawMessage `json:"id"`
+		ConnectionString json.RawMessage `json:"connectionString"`
+		*alias
+	}{alias: (*alias)(c)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	c.ID = rawID(aux.ID)
+	c.ConnectionString = nil
+	if len(aux.ConnectionString) > 0 && aux.ConnectionString[0] == '[' {
+		// Only the array form carries the driver-specific connection strings we
+		// surface; the object form (used by some fetch endpoints) is ignored.
+		_ = json.Unmarshal(aux.ConnectionString, &c.ConnectionString)
+	}
+	return nil
+}
+
 // ConnectionString is one driver-specific connection string for a cluster.
 type ConnectionString struct {
 	Driver  string `json:"driver,omitempty"`
 	ConnStr string `json:"conString,omitempty"`
 }
 
-// clusterListResponse wraps GET /{Db}Clusters/list.
+// clusterListResponse wraps GET /{Db}Clusters/list. Mongo, Redis and MySQL
+// return the array under "cluster" (singular); PostgreSQL uses "clusters".
 type clusterListResponse struct {
+	Cluster  []Cluster `json:"cluster"`
 	Clusters []Cluster `json:"clusters"`
+}
+
+// clusters returns whichever key the engine populated.
+func (r clusterListResponse) clusters() []Cluster {
+	if len(r.Clusters) > 0 {
+		return r.Clusters
+	}
+	return r.Cluster
 }
 
 // clusterFetchResponse wraps GET /{Db}Clusters/{id}/fetch.
@@ -105,11 +166,41 @@ type clusterFetchResponse struct {
 	Cluster Cluster `json:"cluster"`
 }
 
-// asyncResponse carries the IDs returned by mutating endpoints.
+// asyncResponse carries the IDs returned by mutating endpoints. The API returns
+// these as integers, and is inconsistent about casing (actionID vs actionId,
+// machinePoolID vs machinePoolId), so we decode every spelling.
 type asyncResponse struct {
-	ClusterID     string `json:"clusterID,omitempty"`
-	MachinePoolID string `json:"machinePoolID,omitempty"`
-	ActionID      string `json:"actionID,omitempty"`
+	ClusterID     string
+	MachinePoolID string
+	ActionID      string
+}
+
+func (a *asyncResponse) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		ClusterIDUpper     json.RawMessage `json:"clusterID"`
+		ClusterIDLower     json.RawMessage `json:"clusterId"`
+		MachinePoolIDUpper json.RawMessage `json:"machinePoolID"`
+		MachinePoolIDLower json.RawMessage `json:"machinePoolId"`
+		ActionIDUpper      json.RawMessage `json:"actionID"`
+		ActionIDLower      json.RawMessage `json:"actionId"`
+	}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	a.ClusterID = firstRawID(aux.ClusterIDUpper, aux.ClusterIDLower)
+	a.MachinePoolID = firstRawID(aux.MachinePoolIDUpper, aux.MachinePoolIDLower)
+	a.ActionID = firstRawID(aux.ActionIDUpper, aux.ActionIDLower)
+	return nil
+}
+
+// firstRawID returns the first non-empty decoded ID from the candidates.
+func firstRawID(raws ...json.RawMessage) string {
+	for _, raw := range raws {
+		if id := rawID(raw); id != "" {
+			return id
+		}
+	}
+	return ""
 }
 
 // CreateClusterInput is the engine-agnostic input the provider supplies. The
@@ -124,7 +215,6 @@ type CreateClusterInput struct {
 	ServerCount    int // redis nodes per shard
 	SentinelCount  int // redis
 	MachinePoolIDs []string
-	SentinelPools  []string
 	EncryptDisk    bool
 	EnableSSL      bool
 	CIDRList       []string
@@ -136,9 +226,6 @@ type CreateClusterInput struct {
 	// Redis
 	ClusterMode           bool
 	BackupIntervalInHours int
-	MaxMemoryPolicy       string
-	EnableRDB             bool
-	EnableAOF             bool
 
 	// MySQL
 	ReplicaConfig int
@@ -158,6 +245,20 @@ type CloudProfile struct {
 	Status     string `json:"status,omitempty"`
 	Shared     bool   `json:"shared,omitempty"`
 	ConfigJSON string `json:"configJSON,omitempty"`
+}
+
+// UnmarshalJSON decodes a CloudProfile, converting the numeric id to a string.
+func (p *CloudProfile) UnmarshalJSON(data []byte) error {
+	type alias CloudProfile
+	aux := struct {
+		ID json.RawMessage `json:"id"`
+		*alias
+	}{alias: (*alias)(p)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	p.ID = rawID(aux.ID)
+	return nil
 }
 
 // CloudType returns a friendly cloud name (AWS for EC2).
@@ -197,6 +298,23 @@ type Backup struct {
 	Created  int64  `json:"created,omitempty"`
 	Type     string `json:"type,omitempty"`
 	Comment  string `json:"comment,omitempty"`
+}
+
+// UnmarshalJSON decodes a Backup, converting the numeric id and object_id to
+// strings.
+func (b *Backup) UnmarshalJSON(data []byte) error {
+	type alias Backup
+	aux := struct {
+		ID       json.RawMessage `json:"id"`
+		ObjectID json.RawMessage `json:"object_id"`
+		*alias
+	}{alias: (*alias)(b)}
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+	b.ID = rawID(aux.ID)
+	b.ObjectID = rawID(aux.ObjectID)
+	return nil
 }
 
 type backupListResponse struct {
@@ -252,12 +370,11 @@ type actionResponse struct {
 	Action Action `json:"action"`
 }
 
-// Action status values.
+// Action status values, as returned by GET /actions/{id}.
 const (
-	ActionInitiating = "initiating"
-	ActionRunning    = "running"
-	ActionCompleted  = "completed"
-	ActionFailed     = "failed"
+	ActionRunning   = "Running"
+	ActionCompleted = "Completed"
+	ActionFailed    = "Failed"
 )
 
 // firewallResponse wraps the cluster-level IP whitelist.
@@ -265,7 +382,8 @@ type firewallResponse struct {
 	CIDRList []string `json:"cidrList"`
 }
 
-// DatabaseVersions maps version identifiers to display strings.
+// databaseVersionsResponse wraps GET /Clusters/getDatabaseActiveVersions. The
+// API returns a plain array of supported version identifiers.
 type databaseVersionsResponse struct {
-	Versions map[string]string `json:"versions"`
+	Versions []string `json:"versions"`
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -34,10 +35,12 @@ func (c *Client) WaitForAction(ctx context.Context, actionID string, pollInterva
 		if err != nil {
 			return err
 		}
-		switch action.Status {
-		case ActionCompleted:
+		// The API reports status as Running/Completed/Failed; compare
+		// case-insensitively to be resilient to casing changes.
+		switch {
+		case strings.EqualFold(action.Status, ActionCompleted):
 			return nil
-		case ActionFailed:
+		case strings.EqualFold(action.Status, ActionFailed) || action.Cancelled:
 			msg := action.StepError.ErrorMessageWithDetails
 			if msg == "" {
 				msg = "job failed"

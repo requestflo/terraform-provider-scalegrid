@@ -73,22 +73,27 @@ func (c *Client) GetAlertRule(ctx context.Context, db DBType, clusterID, ruleID 
 	return nil, &APIError{Code: "NotFound", Message: fmt.Sprintf("alert rule %q was not found", ruleID)}
 }
 
-// DeleteAlertRule removes an alert rule.
-func (c *Client) DeleteAlertRule(ctx context.Context, ruleID string, force bool) error {
-	body := map[string]any{"forceDelete": force}
-	return c.do(ctx, http.MethodDelete, "/AlertRules/"+ruleID, body, nil)
+// DeleteAlertRule removes an alert rule. The endpoint takes no request body.
+func (c *Client) DeleteAlertRule(ctx context.Context, ruleID string) error {
+	return c.do(ctx, http.MethodDelete, "/AlertRules/"+ruleID, nil, nil)
 }
 
 // UnmarshalJSON normalizes the notifications field, which the API returns as a
-// stringified list.
+// stringified list, and the numeric id/clusterID fields.
 func (r *AlertRule) UnmarshalJSON(data []byte) error {
 	type alias AlertRule
 	aux := struct {
 		Notifications json.RawMessage `json:"notifications"`
+		ID            json.RawMessage `json:"id"`
+		ClusterID     json.RawMessage `json:"clusterID"`
 		*alias
 	}{alias: (*alias)(r)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
+	}
+	r.ID = rawID(aux.ID)
+	if cid := rawID(aux.ClusterID); cid != "" {
+		r.ClusterID = cid
 	}
 	if len(aux.Notifications) > 0 {
 		var list []string
