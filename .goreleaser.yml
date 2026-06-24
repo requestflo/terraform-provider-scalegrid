@@ -1,6 +1,10 @@
 # GoReleaser configuration for publishing to the Terraform Registry.
 version: 2
 
+# The project name must be terraform-provider-<NAME>; the Terraform Registry
+# derives the provider name from it and expects release assets to use it.
+project_name: terraform-provider-scalegrid
+
 before:
   hooks:
     - go mod tidy
@@ -51,6 +55,11 @@ signs:
 
 release:
   draft: false
+  # The Terraform Registry requires the manifest to be published as a release
+  # asset named terraform-provider-<NAME>_<VERSION>_manifest.json.
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
 
 changelog:
   disable: true
