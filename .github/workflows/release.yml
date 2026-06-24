@@ -1,9 +1,14 @@
 name: Release
 
-# semantic-release runs on every push to main: it analyzes Conventional Commit
-# messages, computes the next version, updates CHANGELOG.md, creates the tag,
-# and then invokes GoReleaser (via @semantic-release/exec) to build and sign the
-# Terraform Registry artifacts and publish the GitHub Release.
+# On every push to main, first determine (via a semantic-release dry run)
+# whether a release is actually warranted. Only if one is do we run the heavy
+# steps — build/test, GPG import + signing checks, the GoReleaser build
+# pre-flight, and finally the real semantic-release (which tags and, via
+# @semantic-release/exec, has GoReleaser build/sign/publish the release).
+#
+# Ordering guarantees: everything that can fail (compile + signing) is verified
+# BEFORE semantic-release creates the tag, so a failed release does not leave a
+# dangling tag; and nothing is built when no release is being cut.
 on:
   push:
     branches: [main]
@@ -22,36 +27,60 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
 
+      # Decide whether a release is pending. Skips all heavy work below when the
+      # commits since the last tag don't warrant a new version.
+      - name: Determine release
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          npx --yes \
+            -p semantic-release \
+            -p @semantic-release/changelog \
+            -p @semantic-release/git \
+            -p @semantic-release/exec \
+            semantic-release --dry-run 2>&1 | tee /tmp/sr-dry.log || true
+          if grep -q "The next release version is" /tmp/sr-dry.log; then
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "release=false" >> "$GITHUB_OUTPUT"
+            echo "No release pending — skipping build, signing, and publish."
+          fi
+
+      - name: Set up Go
+        if: steps.check.outputs.release == 'true'
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Install GoReleaser
+        if: steps.check.outputs.release == 'true'
         uses: goreleaser/goreleaser-action@v6
         with:
           install-only: true
 
       - name: Verify build and tests
+        if: steps.check.outputs.release == 'true'
         run: |
           go build ./...
           go test ./... -timeout 120s
 
       - name: Import GPG key
         id: import_gpg
+        if: steps.check.outputs.release == 'true'
         uses: crazy-max/ghaction-import-gpg@v6
         with:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
 
-      # Fail fast if the key/passphrase can't actually sign, BEFORE
-      # semantic-release creates a tag — otherwise a signing failure leaves a
-      # dangling tag with no release.
+      # Fail fast if the key/passphrase can't sign, BEFORE any tag is created.
       - name: Verify GPG signing works
+        if: steps.check.outputs.release == 'true'
         env:
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
           GPG_PASSWORD: ${{ secrets.PASSPHRASE }}
@@ -63,7 +92,14 @@ jobs:
             --output /tmp/sign-check.sig --detach-sign /tmp/sign-check.txt
           echo "GPG signing verified."
 
+      # Cross-compile every target (no archive/publish) so a build failure also
+      # aborts before the tag is created.
+      - name: Pre-flight cross-compile
+        if: steps.check.outputs.release == 'true'
+        run: goreleaser build --snapshot --clean
+
       - name: Semantic Release
+        if: steps.check.outputs.release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
