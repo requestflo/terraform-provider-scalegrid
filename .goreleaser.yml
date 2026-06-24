@@ -42,6 +42,11 @@ archives:
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_SHA256SUMS"
   algorithm: sha256
+  # The Terraform Registry requires the manifest's checksum to be present in the
+  # SHA256SUMS file, so it must be included here (not only in release.extra_files).
+  extra_files:
+    - glob: terraform-registry-manifest.json
+      name_template: "{{ .ProjectName }}_{{ .Version }}_manifest.json"
 
 signs:
   - artifacts: checksum
