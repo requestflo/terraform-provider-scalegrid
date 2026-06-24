@@ -86,9 +86,9 @@ func commonClusterAttributes() map[string]schema.Attribute {
 			PlanModifiers: []planmodifier.Bool{boolRequiresReplace()},
 		},
 		"paused": schema.BoolAttribute{
-			Optional:    true,
-			Computed:    true,
-			Default:     booldefault.StaticBool(false),
+			Optional: true,
+			Computed: true,
+			Default:  booldefault.StaticBool(false),
 			Description: "Whether the cluster is paused. Toggling this pauses or resumes the cluster in place. " +
 				"Note: pause/resume is only supported for Bring Your Own Cloud (BYOC) deployments.",
 		},
