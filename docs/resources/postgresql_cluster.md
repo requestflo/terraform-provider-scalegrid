@@ -46,7 +46,7 @@ resource "scalegrid_postgresql_cluster" "this" {
 - `replica_count` (Number) Nodes per shard. 1 for standalone, more for a replica set.
 - `replication_type` (String) Replication type: `ASYNC` or `SYNC` (only relevant when replica_count > 1).
 - `shard_count` (Number) Number of shards. 1 for standalone/replica set; more for sharded.
-- `sync_commit_type` (String) Synchronous commit type (e.g. `LOCAL`, `ON`, `REMOTE_WRITE`, `REMOTE_APPLY`, `OFF`).
+- `sync_commit_type` (String) Synchronous commit type: `ON`, `LOCAL`, `REMOTE_WRITE`, `REMOTE_APPLY`, or `OFF`. With ASYNC use LOCAL or OFF; with SYNC use ON, REMOTE_WRITE, or REMOTE_APPLY.
 
 ### Read-Only
 

@@ -18,6 +18,17 @@ func rawID(raw json.RawMessage) string {
 	return s
 }
 
+// rawBool decodes a JSON value that may be a boolean or a quoted string
+// ("true"/"yes"/"1") into a bool. Absent or unrecognised values yield false.
+func rawBool(raw json.RawMessage) bool {
+	switch strings.ToLower(strings.Trim(strings.TrimSpace(string(raw)), `"`)) {
+	case "true", "yes", "1":
+		return true
+	default:
+		return false
+	}
+}
+
 // DBType identifies a database engine. The string value is the path prefix used
 // by the console API (e.g. "Mongo" -> /MongoClusters/...). The wire value sent
 // in request bodies (the "dbType" field) is the upper-cased canonical name.
@@ -123,14 +134,20 @@ type Cluster struct {
 func (c *Cluster) UnmarshalJSON(data []byte) error {
 	type alias Cluster
 	aux := struct {
-		ID               json.RawMessage `json:"id"`
-		ConnectionString json.RawMessage `json:"connectionString"`
+		ID                json.RawMessage `json:"id"`
+		ConnectionString  json.RawMessage `json:"connectionString"`
+		SSLEnabled        json.RawMessage `json:"sslEnabled"`
+		EncryptionEnabled json.RawMessage `json:"encryptionEnabled"`
 		*alias
 	}{alias: (*alias)(c)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	c.ID = rawID(aux.ID)
+	// sslEnabled/encryptionEnabled come back as booleans on most endpoints but as
+	// strings on a few list responses; accept either.
+	c.SSLEnabled = rawBool(aux.SSLEnabled)
+	c.EncryptionEnabled = rawBool(aux.EncryptionEnabled)
 	c.ConnectionString = nil
 	if len(aux.ConnectionString) > 0 && aux.ConnectionString[0] == '[' {
 		// Only the array form carries the driver-specific connection strings we
@@ -290,12 +307,13 @@ type CreateAWSCloudProfileInput struct {
 	EnableSSH          bool
 }
 
-// Backup represents a cluster backup.
+// Backup represents a cluster backup. The API returns created as a string Unix
+// timestamp, and id/object_id as integers.
 type Backup struct {
 	ID       string `json:"id,omitempty"`
 	Name     string `json:"name,omitempty"`
 	ObjectID string `json:"object_id,omitempty"`
-	Created  int64  `json:"created,omitempty"`
+	Created  string `json:"created,omitempty"`
 	Type     string `json:"type,omitempty"`
 	Comment  string `json:"comment,omitempty"`
 }
@@ -353,21 +371,46 @@ type alertRuleCreateResponse struct {
 	Rule AlertRule `json:"rule"`
 }
 
-// Action is the status of an asynchronous job.
+// Action is the status of an asynchronous job. Per the API the fields are
+// returned at the top level of GET /actions/{id}, with the failure reason in the
+// standard "error" object.
 type Action struct {
-	ID        string `json:"id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	Status    string `json:"status,omitempty"`
-	Progress  int64  `json:"progress,omitempty"`
-	Cancelled bool   `json:"cancelled,omitempty"`
+	ID        string  `json:"id,omitempty"`
+	Name      string  `json:"name,omitempty"`
+	Status    string  `json:"status,omitempty"`
+	Progress  int64   `json:"progress,omitempty"`
+	Cancelled bool    `json:"cancelled,omitempty"`
+	Error     sgError `json:"error,omitempty"`
 	StepError struct {
 		ErrorMessageWithDetails string `json:"errorMessageWithDetails"`
 		RecommendedAction       string `json:"recommendedAction"`
 	} `json:"stepError,omitempty"`
 }
 
+// failureMessage returns the best available description of a failed action.
+func (a Action) failureMessage() string {
+	if a.StepError.ErrorMessageWithDetails != "" {
+		return a.StepError.ErrorMessageWithDetails
+	}
+	if msg := a.Error.message(); msg != "" {
+		return msg
+	}
+	return "job failed"
+}
+
+// actionResponse tolerates both the documented top-level shape and a nested
+// "action" object, returning whichever carries a status.
 type actionResponse struct {
-	Action Action `json:"action"`
+	Action
+	Nested *Action `json:"action"`
+}
+
+// action returns the populated action from whichever shape was returned.
+func (r actionResponse) action() Action {
+	if r.Nested != nil && r.Nested.Status != "" {
+		return *r.Nested
+	}
+	return r.Action
 }
 
 // Action status values, as returned by GET /actions/{id}.

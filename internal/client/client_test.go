@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -183,6 +184,40 @@ func TestWaitForAction(t *testing.T) {
 	}
 	if calls < 2 {
 		t.Errorf("expected >=2 polls, got %d", calls)
+	}
+}
+
+// TestWaitForActionTopLevel verifies the action status is read from the
+// top-level response fields (the shape documented in the OpenAPI spec), not only
+// from a nested "action" object.
+func TestWaitForActionTopLevel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, map[string]any{"status": ActionCompleted, "progress": 100})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	if err := c.WaitForAction(context.Background(), "a-1", time.Millisecond); err != nil {
+		t.Fatalf("WaitForAction: %v", err)
+	}
+}
+
+// TestWaitForActionFailedTopLevel verifies a failed job surfaces the message
+// from the top-level "error" object.
+func TestWaitForActionFailedTopLevel(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"status": ActionFailed,
+			"error":  map[string]any{"code": "Success", "errorMessage": "disk full"},
+		})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	err := c.WaitForAction(context.Background(), "a-1", time.Millisecond)
+	if err == nil {
+		t.Fatal("expected failure error")
+	}
+	if !strings.Contains(err.Error(), "disk full") {
+		t.Errorf("expected failure message to include API detail, got: %v", err)
 	}
 }
 

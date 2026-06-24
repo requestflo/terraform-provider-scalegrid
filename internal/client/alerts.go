@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -27,7 +28,7 @@ func (c *Client) CreateAlertRule(ctx context.Context, in CreateAlertRuleInput) (
 		"databaseType":  in.DBType.WireType(),
 		"alertRuleType": strings.ToUpper(in.Type),
 		"operator":      strings.ToUpper(in.Operator),
-		"threshold":     in.Threshold,
+		"threshold":     numberOrString(in.Threshold),
 		"notifications": upperAll(in.Notifications),
 	}
 	if in.Metric != "" {
@@ -86,6 +87,7 @@ func (r *AlertRule) UnmarshalJSON(data []byte) error {
 		Notifications json.RawMessage `json:"notifications"`
 		ID            json.RawMessage `json:"id"`
 		ClusterID     json.RawMessage `json:"clusterID"`
+		Threshold     json.RawMessage `json:"threshold"`
 		*alias
 	}{alias: (*alias)(r)}
 	if err := json.Unmarshal(data, &aux); err != nil {
@@ -94,6 +96,9 @@ func (r *AlertRule) UnmarshalJSON(data []byte) error {
 	r.ID = rawID(aux.ID)
 	if cid := rawID(aux.ClusterID); cid != "" {
 		r.ClusterID = cid
+	}
+	if th := rawID(aux.Threshold); th != "" {
+		r.Threshold = th
 	}
 	if len(aux.Notifications) > 0 {
 		var list []string
@@ -113,6 +118,15 @@ func (r *AlertRule) UnmarshalJSON(data []byte) error {
 		}
 	}
 	return nil
+}
+
+// numberOrString returns s parsed as a float64 when possible (the API expects a
+// numeric threshold), falling back to the raw string.
+func numberOrString(s string) any {
+	if f, err := strconv.ParseFloat(s, 64); err == nil {
+		return f
+	}
+	return s
 }
 
 func upperAll(in []string) []string {

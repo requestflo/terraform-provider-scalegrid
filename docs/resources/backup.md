@@ -34,10 +34,10 @@ resource "scalegrid_backup" "snapshot" {
 ### Optional
 
 - `comment` (String) Optional comment describing the backup.
-- `target` (String) For replica sets, which node to back up: `PRIMARY`/`SECONDARY` (MongoDB) or `MASTER`/`SLAVE` (Redis/MySQL). Defaults to the secondary.
+- `target` (String) For replica sets, which node to back up: `PRIMARY`/`SECONDARY` (MongoDB), `MASTER`/`SLAVE` (Redis/MySQL), or `MASTER`/`STANDBY` (PostgreSQL). PostgreSQL requires a target and defaults to `MASTER`.
 
 ### Read-Only
 
-- `created` (Number) Creation timestamp (epoch milliseconds).
+- `created` (String) Creation time as a Unix timestamp (seconds, UTC).
 - `id` (String) Unique identifier of the backup.
-- `type` (String) Backup type.
+- `type` (String) Backup type (`ONDEMAND` or `SCHEDULED`).

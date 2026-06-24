@@ -34,7 +34,7 @@ type backupResourceModel struct {
 	Comment   types.String `tfsdk:"comment"`
 	Target    types.String `tfsdk:"target"`
 	Type      types.String `tfsdk:"type"`
-	Created   types.Int64  `tfsdk:"created"`
+	Created   types.String `tfsdk:"created"`
 }
 
 func (r *backupResource) Metadata(_ context.Context, req resource.MetadataRequest, resp *resource.MetadataResponse) {
@@ -73,12 +73,13 @@ func (r *backupResource) Schema(_ context.Context, _ resource.SchemaRequest, res
 			},
 			"target": schema.StringAttribute{
 				Optional: true,
-				Description: "For replica sets, which node to back up: `PRIMARY`/`SECONDARY` (MongoDB) or " +
-					"`MASTER`/`SLAVE` (Redis/MySQL). Defaults to the secondary.",
+				Description: "For replica sets, which node to back up: `PRIMARY`/`SECONDARY` (MongoDB), " +
+					"`MASTER`/`SLAVE` (Redis/MySQL), or `MASTER`/`STANDBY` (PostgreSQL). PostgreSQL " +
+					"requires a target and defaults to `MASTER`.",
 				PlanModifiers: reqReplaceStr(),
 			},
-			"type":    schema.StringAttribute{Computed: true, Description: "Backup type."},
-			"created": schema.Int64Attribute{Computed: true, Description: "Creation timestamp (epoch milliseconds)."},
+			"type":    schema.StringAttribute{Computed: true, Description: "Backup type (`ONDEMAND` or `SCHEDULED`)."},
+			"created": schema.StringAttribute{Computed: true, Description: "Creation time as a Unix timestamp (seconds, UTC)."},
 		},
 	}
 }
@@ -179,7 +180,7 @@ func (r *backupResource) Delete(ctx context.Context, req resource.DeleteRequest,
 func (r *backupResource) mapComputed(b *client.Backup, model *backupResourceModel) {
 	model.ID = types.StringValue(b.ID)
 	model.Type = optionalString(b.Type)
-	model.Created = types.Int64Value(b.Created)
+	model.Created = optionalString(b.Created)
 	if b.Comment != "" {
 		model.Comment = types.StringValue(b.Comment)
 	}

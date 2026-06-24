@@ -3,10 +3,12 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/stringvalidator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/booldefault"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema/planmodifier"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -66,11 +68,15 @@ func (r *postgresClusterResource) Schema(_ context.Context, _ resource.SchemaReq
 				Optional:      true,
 				Description:   "Replication type: `ASYNC` or `SYNC` (only relevant when replica_count > 1).",
 				PlanModifiers: reqReplaceStr(),
+				Validators:    []validator.String{stringvalidator.OneOf("ASYNC", "SYNC")},
 			},
 			"sync_commit_type": schema.StringAttribute{
-				Optional:      true,
-				Description:   "Synchronous commit type (e.g. `LOCAL`, `ON`, `REMOTE_WRITE`, `REMOTE_APPLY`, `OFF`).",
+				Optional: true,
+				Description: "Synchronous commit type: `ON`, `LOCAL`, `REMOTE_WRITE`, `REMOTE_APPLY`, or `OFF`. " +
+					"With ASYNC use LOCAL or OFF; with SYNC use ON, REMOTE_WRITE, or REMOTE_APPLY.",
 				PlanModifiers: reqReplaceStr(),
+				Validators: []validator.String{stringvalidator.OneOf(
+					"ON", "LOCAL", "REMOTE_WRITE", "REMOTE_APPLY", "OFF")},
 			},
 			"enable_pgbouncer": schema.BoolAttribute{
 				Optional:      true,

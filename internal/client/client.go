@@ -65,10 +65,21 @@ type Client struct {
 }
 
 // sgError mirrors the "error" envelope returned on every ScaleGrid response.
+// The documented field is "errorMessage"; some endpoints additionally return a
+// more detailed "errorMessageWithDetails", so both are decoded.
 type sgError struct {
 	Code                    string `json:"code"`
+	ErrorMessage            string `json:"errorMessage"`
 	ErrorMessageWithDetails string `json:"errorMessageWithDetails"`
 	RecommendedAction       string `json:"recommendedAction"`
+}
+
+// message returns the most detailed human-readable message available.
+func (e sgError) message() string {
+	if e.ErrorMessageWithDetails != "" {
+		return e.ErrorMessageWithDetails
+	}
+	return e.ErrorMessage
 }
 
 // errorEnvelope is used to peek at the error code before decoding the payload.
@@ -236,7 +247,7 @@ func (c *Client) do(ctx context.Context, method, path string, body, out any) err
 	if !isSuccessCode(env.Error.Code) {
 		return &APIError{
 			Code:              env.Error.Code,
-			Message:           env.Error.ErrorMessageWithDetails,
+			Message:           env.Error.message(),
 			RecommendedAction: env.Error.RecommendedAction,
 			StatusCode:        resp.StatusCode,
 		}

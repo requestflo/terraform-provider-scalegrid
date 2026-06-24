@@ -42,8 +42,8 @@ resource "scalegrid_mysql_cluster" "this" {
 - `enable_ssl` (Boolean) Enable SSL/TLS for client connections.
 - `encrypt_disk` (Boolean) Encrypt the data disk.
 - `paused` (Boolean) Whether the cluster is paused. Toggling this pauses or resumes the cluster in place. Note: pause/resume is only supported for Bring Your Own Cloud (BYOC) deployments.
-- `replica_config` (Number) Replication mode: 0 standalone, 1 semisynchronous, 2 asynchronous.
-- `replica_count` (Number) Nodes per shard. 1 for standalone, more for a replica set.
+- `replica_config` (Number) Replication mode: 0 none (standalone), 1 semi-synchronous, 2 asynchronous.
+- `replica_count` (Number) Data nodes per shard: 1 (standalone), 2 (adds a quorum node), or 3.
 - `shard_count` (Number) Number of shards. 1 for standalone/replica set; more for sharded.
 
 ### Read-Only

@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 
+	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
 	"github.com/hashicorp/terraform-plugin-framework/resource/schema"
+	"github.com/hashicorp/terraform-plugin-framework/schema/validator"
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 
@@ -55,13 +57,15 @@ func (r *mysqlClusterResource) Schema(_ context.Context, _ resource.SchemaReques
 		Attributes: mergeAttributes(map[string]schema.Attribute{
 			"replica_count": schema.Int64Attribute{
 				Optional:      true,
-				Description:   "Nodes per shard. 1 for standalone, more for a replica set.",
+				Description:   "Data nodes per shard: 1 (standalone), 2 (adds a quorum node), or 3.",
 				PlanModifiers: reqReplaceInt(),
+				Validators:    []validator.Int64{int64validator.OneOf(1, 2, 3)},
 			},
 			"replica_config": schema.Int64Attribute{
 				Optional:      true,
-				Description:   "Replication mode: 0 standalone, 1 semisynchronous, 2 asynchronous.",
+				Description:   "Replication mode: 0 none (standalone), 1 semi-synchronous, 2 asynchronous.",
 				PlanModifiers: reqReplaceInt(),
+				Validators:    []validator.Int64{int64validator.OneOf(0, 1, 2)},
 			},
 		}),
 	}
