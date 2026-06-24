@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/requestflo/terraform-provider-scalegrid/compare/v1.0.1...v1.0.2) (2026-06-24)
+
+
+### Bug Fixes
+
+* verify GPG signing before tagging the release ([#6](https://github.com/requestflo/terraform-provider-scalegrid/issues/6)) ([468748f](https://github.com/requestflo/terraform-provider-scalegrid/commit/468748fe70411800848c80cea0656f226a7358d8))
+
 ## [1.0.1](https://github.com/requestflo/terraform-provider-scalegrid/compare/v1.0.0...v1.0.1) (2026-06-24)
 
 
