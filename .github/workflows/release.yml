@@ -48,6 +48,21 @@ jobs:
           gpg_private_key: ${{ secrets.GPG_PRIVATE_KEY }}
           passphrase: ${{ secrets.PASSPHRASE }}
 
+      # Fail fast if the key/passphrase can't actually sign, BEFORE
+      # semantic-release creates a tag — otherwise a signing failure leaves a
+      # dangling tag with no release.
+      - name: Verify GPG signing works
+        env:
+          GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          GPG_PASSWORD: ${{ secrets.PASSPHRASE }}
+        run: |
+          echo "preflight" > /tmp/sign-check.txt
+          gpg --batch --no-tty --pinentry-mode loopback \
+            --passphrase "$GPG_PASSWORD" \
+            --local-user "$GPG_FINGERPRINT" \
+            --output /tmp/sign-check.sig --detach-sign /tmp/sign-check.txt
+          echo "GPG signing verified."
+
       - name: Semantic Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
