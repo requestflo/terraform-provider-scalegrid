@@ -46,7 +46,16 @@ checksum:
 signs:
   - artifacts: checksum
     args:
+      # Sign non-interactively in CI: loopback pinentry + passphrase via env,
+      # otherwise gpg tries to open a TTY prompt and fails with
+      # "Inappropriate ioctl for device". GPG_PASSWORD may be empty for keys
+      # created without a passphrase.
       - "--batch"
+      - "--no-tty"
+      - "--pinentry-mode"
+      - "loopback"
+      - "--passphrase"
+      - "{{ .Env.GPG_PASSWORD }}"
       - "--local-user"
       - "{{ .Env.GPG_FINGERPRINT }}"
       - "--output"

@@ -52,6 +52,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GPG_FINGERPRINT: ${{ steps.import_gpg.outputs.fingerprint }}
+          # Passphrase for non-interactive signing (empty if the key has none).
+          GPG_PASSWORD: ${{ secrets.PASSPHRASE }}
         run: |
           npx --yes \
             -p semantic-release \
