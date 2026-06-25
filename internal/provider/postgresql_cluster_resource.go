@@ -33,6 +33,7 @@ type postgresClusterModel struct {
 	Size              types.String `tfsdk:"size"`
 	Version           types.String `tfsdk:"version"`
 	CloudProfileNames types.List   `tfsdk:"cloud_profile_names"`
+	CloudProvider     types.String `tfsdk:"cloud_provider"`
 	Region            types.String `tfsdk:"region"`
 	ShardCount        types.Int64  `tfsdk:"shard_count"`
 	EncryptDisk       types.Bool   `tfsdk:"encrypt_disk"`
@@ -112,7 +113,7 @@ func (r *postgresClusterResource) Create(ctx context.Context, req resource.Creat
 		return
 	}
 	nodeCount := nodesPerCluster(int(plan.ShardCount.ValueInt64()), int(plan.ReplicaCount.ValueInt64()))
-	poolIDs, err := resolveMachinePools(ctx, r.client, client.DBPostgreSQL, profileNames, plan.Region.ValueString(), nodeCount)
+	poolIDs, err := resolveMachinePools(ctx, r.client, client.DBPostgreSQL, profileNames, plan.CloudProvider.ValueString(), plan.Region.ValueString(), nodeCount)
 	if err != nil {
 		resp.Diagnostics.AddError("Error resolving cloud profiles", err.Error())
 		return

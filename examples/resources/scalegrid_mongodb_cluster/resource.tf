@@ -14,14 +14,16 @@ resource "scalegrid_mongodb_cluster" "this" {
 
 # A Dedicated (shared, ScaleGrid-hosted) replica set. On a Dedicated plan you do
 # not need to reference a cloud profile: omit cloud_profile_names and the
-# provider selects the shared profile for the engine automatically. Set region
-# when more than one shared profile is available.
+# provider selects the shared profile for the engine automatically. Pick the
+# cloud with cloud_provider and narrow to a region when more than one shared
+# profile matches.
 resource "scalegrid_mongodb_cluster" "dedicated" {
-  name          = "dedicated-mongo"
-  size          = "Small"
-  version       = "V366"
-  shard_count   = 1
-  replica_count = 3
-  region        = "useast1"
-  enable_ssl    = true
+  name           = "dedicated-mongo"
+  size           = "Small"
+  version        = "V366"
+  shard_count    = 1
+  replica_count  = 3
+  cloud_provider = "AWS"
+  region         = "useast1"
+  enable_ssl     = true
 }

@@ -269,6 +269,76 @@ func TestFirewallRoundTrip(t *testing.T) {
 	}
 }
 
+func TestNormalizeCloudProvider(t *testing.T) {
+	cases := map[string]string{
+		"":             "",
+		"ec2":          "AWS",
+		"AWS":          "AWS",
+		"AZUREARM":     "AZURE",
+		"azure":        "AZURE",
+		"digitalocean": "DIGITALOCEAN",
+		"GCP":          "GCP",
+		"linode":       "LINODE",
+		"oracle":       "ORACLE",
+	}
+	for in, want := range cases {
+		if got := NormalizeCloudProvider(in); got != want {
+			t.Errorf("NormalizeCloudProvider(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestFindSharedCloudProfile verifies shared-profile selection filters by
+// engine, shared flag, cloud provider, and region, and reports ambiguity.
+func TestFindSharedCloudProfile(t *testing.T) {
+	clouds := []map[string]any{
+		{"id": 1, "providerMachinePoolName": "shared-aws-use1", "dbType": "MONGODB", "type": "EC2", "region": "useast1", "shared": true},
+		{"id": 2, "providerMachinePoolName": "shared-do-use1", "dbType": "MONGODB", "type": "DIGITALOCEAN", "region": "useast1", "shared": true},
+		{"id": 3, "providerMachinePoolName": "shared-aws-usw2", "dbType": "MONGODB", "type": "EC2", "region": "uswest2", "shared": true},
+		{"id": 4, "providerMachinePoolName": "byoc-aws-use1", "dbType": "MONGODB", "type": "EC2", "region": "useast1", "shared": false},
+		{"id": 5, "providerMachinePoolName": "shared-aws-redis", "dbType": "REDIS", "type": "EC2", "region": "useast1", "shared": true},
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, map[string]any{"clouds": clouds})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+	ctx := context.Background()
+
+	// Provider + region uniquely identify a shared Mongo profile.
+	p, err := c.FindSharedCloudProfile(ctx, DBMongo, "AWS", "useast1")
+	if err != nil {
+		t.Fatalf("AWS/useast1: %v", err)
+	}
+	if p.ID != "1" {
+		t.Errorf("expected profile 1, got %q", p.ID)
+	}
+
+	// Region alone is ambiguous across AWS and DigitalOcean.
+	if _, err := c.FindSharedCloudProfile(ctx, DBMongo, "", "useast1"); err == nil {
+		t.Error("expected ambiguity error for region-only match")
+	}
+
+	// Provider alone is ambiguous across regions.
+	if _, err := c.FindSharedCloudProfile(ctx, DBMongo, "AWS", ""); err == nil {
+		t.Error("expected ambiguity error for provider-only match")
+	}
+
+	// No shared profile for the provider/region combination.
+	if _, err := c.FindSharedCloudProfile(ctx, DBMongo, "GCP", "useast1"); !IsNotFound(err) {
+		t.Errorf("expected not-found, got %v", err)
+	}
+
+	// A single Redis shared profile resolves without extra filters.
+	p, err = c.FindSharedCloudProfile(ctx, DBRedis, "", "")
+	if err != nil {
+		t.Fatalf("redis: %v", err)
+	}
+	if p.ID != "5" {
+		t.Errorf("expected redis profile 5, got %q", p.ID)
+	}
+}
+
 func TestDBTypeHelpers(t *testing.T) {
 	if DBMongo.PathPrefix() != "MongoClusters" {
 		t.Errorf("path prefix: %s", DBMongo.PathPrefix())

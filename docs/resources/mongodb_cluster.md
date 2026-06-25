@@ -29,16 +29,18 @@ resource "scalegrid_mongodb_cluster" "this" {
 
 # A Dedicated (shared, ScaleGrid-hosted) replica set. On a Dedicated plan you do
 # not need to reference a cloud profile: omit cloud_profile_names and the
-# provider selects the shared profile for the engine automatically. Set region
-# when more than one shared profile is available.
+# provider selects the shared profile for the engine automatically. Pick the
+# cloud with cloud_provider and narrow to a region when more than one shared
+# profile matches.
 resource "scalegrid_mongodb_cluster" "dedicated" {
-  name          = "dedicated-mongo"
-  size          = "Small"
-  version       = "V366"
-  shard_count   = 1
-  replica_count = 3
-  region        = "useast1"
-  enable_ssl    = true
+  name           = "dedicated-mongo"
+  size           = "Small"
+  version        = "V366"
+  shard_count    = 1
+  replica_count  = 3
+  cloud_provider = "AWS"
+  region         = "useast1"
+  enable_ssl     = true
 }
 ```
 
@@ -54,12 +56,13 @@ resource "scalegrid_mongodb_cluster" "dedicated" {
 ### Optional
 
 - `cloud_profile_names` (List of String) Names of the ScaleGrid cloud profiles to deploy nodes into, one per node across shards. Optional: omit it on a Dedicated (shared, ScaleGrid-hosted) plan and the provider selects the shared profile for this engine automatically (set `region` to disambiguate when more than one matches). For Bring Your Own Cloud, supply your own profile name(s); a single name is reused for every node. Look them up with the `scalegrid_cloud_profile` data source.
+- `cloud_provider` (String) Cloud provider used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted: one of `AWS`, `AZURE`, `DIGITALOCEAN`, `GCP`, or `LINODE`. Combine with `region` to identify the profile uniquely. Ignored when `cloud_profile_names` is set.
 - `compression_algo` (String) Compression algorithm: `snappy` or `zlib`. Omit to leave data uncompressed.
 - `enable_ssl` (Boolean) Enable SSL/TLS for client connections.
 - `encrypt_disk` (Boolean) Encrypt the data disk.
 - `mongo_engine` (String) Storage engine: `wiredtiger` (default) or `mmapv1`.
 - `paused` (Boolean) Whether the cluster is paused. Toggling this pauses or resumes the cluster in place. Note: pause/resume is only supported for Bring Your Own Cloud (BYOC) deployments.
-- `region` (String) Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted, e.g. `useast1`. Ignored when `cloud_profile_names` is set.
+- `region` (String) Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted, e.g. `useast1`. Combine with `cloud_provider`. Ignored when `cloud_profile_names` is set.
 - `replica_count` (Number) Nodes per shard. 1 for standalone, more for a replica set.
 - `shard_count` (Number) Number of shards. 1 for standalone/replica set; more for sharded.
 

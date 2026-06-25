@@ -282,10 +282,37 @@ func (p *CloudProfile) UnmarshalJSON(data []byte) error {
 
 // CloudType returns a friendly cloud name (AWS for EC2).
 func (p CloudProfile) CloudType() string {
-	if p.Type == "EC2" {
-		return "AWS"
+	if c := NormalizeCloudProvider(p.Type); c != "" {
+		return c
 	}
 	return p.Type
+}
+
+// ValidCloudProviders lists the canonical cloud provider keys accepted by the
+// cloud_provider attribute when selecting a shared (Dedicated) cloud profile.
+var ValidCloudProviders = []string{"AWS", "AZURE", "DIGITALOCEAN", "GCP", "LINODE"}
+
+// NormalizeCloudProvider maps a cloud profile's wire `type` (EC2, AZUREARM, ...)
+// or a user-supplied provider name to a canonical key (AWS, AZURE, DIGITALOCEAN,
+// GCP, LINODE). It returns "" for an empty input and the upper-cased value for
+// anything unrecognised, so unknown providers still compare consistently.
+func NormalizeCloudProvider(s string) string {
+	switch strings.ToUpper(s) {
+	case "":
+		return ""
+	case "EC2", "AWS":
+		return "AWS"
+	case "AZUREARM", "AZURE":
+		return "AZURE"
+	case "DIGITALOCEAN", "DO":
+		return "DIGITALOCEAN"
+	case "GCP", "GOOGLE":
+		return "GCP"
+	case "LINODE":
+		return "LINODE"
+	default:
+		return strings.ToUpper(s)
+	}
 }
 
 type cloudProfileListResponse struct {

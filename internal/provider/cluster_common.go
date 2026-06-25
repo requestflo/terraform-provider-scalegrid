@@ -66,10 +66,18 @@ func commonClusterAttributes() map[string]schema.Attribute {
 				"name is reused for every node. Look them up with the `scalegrid_cloud_profile` data source.",
 			PlanModifiers: []planmodifier.List{listRequiresReplace()},
 		},
+		"cloud_provider": schema.StringAttribute{
+			Optional: true,
+			Description: "Cloud provider used to pick a shared (Dedicated) cloud profile when " +
+				"`cloud_profile_names` is omitted: one of `AWS`, `AZURE`, `DIGITALOCEAN`, `GCP`, or `LINODE`. " +
+				"Combine with `region` to identify the profile uniquely. Ignored when `cloud_profile_names` is set.",
+			PlanModifiers: reqReplaceStr(),
+			Validators:    []validator.String{stringvalidator.OneOf(client.ValidCloudProviders...)},
+		},
 		"region": schema.StringAttribute{
 			Optional: true,
 			Description: "Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` " +
-				"is omitted, e.g. `useast1`. Ignored when `cloud_profile_names` is set.",
+				"is omitted, e.g. `useast1`. Combine with `cloud_provider`. Ignored when `cloud_profile_names` is set.",
 			PlanModifiers: reqReplaceStr(),
 		},
 		"shard_count": schema.Int64Attribute{
@@ -138,10 +146,11 @@ func resolveProfiles(ctx context.Context, c *client.Client, names []string) ([]s
 //   - When names are supplied, they are resolved to IDs. A single name is reused
 //     for every node; multiple names are used verbatim (advanced topologies).
 //   - When names are omitted, the shared (Dedicated) profile for the engine is
-//     discovered automatically (optionally narrowed by region) and reused for
-//     every node, so Dedicated plans need not reference a cloud profile at all.
+//     discovered automatically (optionally narrowed by cloud provider and
+//     region) and reused for every node, so Dedicated plans need not reference a
+//     cloud profile at all.
 func resolveMachinePools(ctx context.Context, c *client.Client, db client.DBType,
-	names []string, region string, nodeCount int) ([]string, error) {
+	names []string, provider, region string, nodeCount int) ([]string, error) {
 	if nodeCount < 1 {
 		nodeCount = 1
 	}
@@ -155,7 +164,7 @@ func resolveMachinePools(ctx context.Context, c *client.Client, db client.DBType
 		}
 		return ids, nil
 	}
-	profile, err := c.FindSharedCloudProfile(ctx, db, region)
+	profile, err := c.FindSharedCloudProfile(ctx, db, provider, region)
 	if err != nil {
 		return nil, err
 	}

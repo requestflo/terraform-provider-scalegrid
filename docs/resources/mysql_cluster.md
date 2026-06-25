@@ -39,10 +39,11 @@ resource "scalegrid_mysql_cluster" "this" {
 ### Optional
 
 - `cloud_profile_names` (List of String) Names of the ScaleGrid cloud profiles to deploy nodes into, one per node across shards. Optional: omit it on a Dedicated (shared, ScaleGrid-hosted) plan and the provider selects the shared profile for this engine automatically (set `region` to disambiguate when more than one matches). For Bring Your Own Cloud, supply your own profile name(s); a single name is reused for every node. Look them up with the `scalegrid_cloud_profile` data source.
+- `cloud_provider` (String) Cloud provider used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted: one of `AWS`, `AZURE`, `DIGITALOCEAN`, `GCP`, or `LINODE`. Combine with `region` to identify the profile uniquely. Ignored when `cloud_profile_names` is set.
 - `enable_ssl` (Boolean) Enable SSL/TLS for client connections.
 - `encrypt_disk` (Boolean) Encrypt the data disk.
 - `paused` (Boolean) Whether the cluster is paused. Toggling this pauses or resumes the cluster in place. Note: pause/resume is only supported for Bring Your Own Cloud (BYOC) deployments.
-- `region` (String) Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted, e.g. `useast1`. Ignored when `cloud_profile_names` is set.
+- `region` (String) Region used to pick a shared (Dedicated) cloud profile when `cloud_profile_names` is omitted, e.g. `useast1`. Combine with `cloud_provider`. Ignored when `cloud_profile_names` is set.
 - `replica_config` (Number) Replication mode: 0 none (standalone), 1 semi-synchronous, 2 asynchronous.
 - `replica_count` (Number) Data nodes per shard: 1 (standalone), 2 (adds a quorum node), or 3.
 - `shard_count` (Number) Number of shards. 1 for standalone/replica set; more for sharded.
