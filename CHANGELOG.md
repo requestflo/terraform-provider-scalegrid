@@ -1,3 +1,11 @@
+# [2.2.0](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.1.0...v2.2.0) (2026-06-25)
+
+
+### Features
+
+* add cloud_provider selector for shared (Dedicated) hosting ([baa3474](https://github.com/requestflo/terraform-provider-scalegrid/commit/baa34740b59b3cbad8b7ceb3b3e72ec420da534c))
+* add cloud_provider selector for shared (Dedicated) hosting ([#12](https://github.com/requestflo/terraform-provider-scalegrid/issues/12)) ([a3b0438](https://github.com/requestflo/terraform-provider-scalegrid/commit/a3b0438cd3779cebde9923c82c4343062e66dfde))
+
 # [2.1.0](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.0.0...v2.1.0) (2026-06-24)
 
 
