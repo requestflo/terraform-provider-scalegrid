@@ -84,21 +84,30 @@ func (c *Client) DeleteAlertRule(ctx context.Context, ruleID string) error {
 func (r *AlertRule) UnmarshalJSON(data []byte) error {
 	type alias AlertRule
 	aux := struct {
-		Notifications json.RawMessage `json:"notifications"`
-		ID            json.RawMessage `json:"id"`
-		ClusterID     json.RawMessage `json:"clusterID"`
-		Threshold     json.RawMessage `json:"threshold"`
+		Notifications  json.RawMessage `json:"notifications"`
+		ID             json.RawMessage `json:"id"`
+		ClusterIDLower json.RawMessage `json:"clusterId"`
+		ClusterIDUpper json.RawMessage `json:"clusterID"`
+		Threshold      json.RawMessage `json:"threshold"`
+		Enabled        json.RawMessage `json:"enabled"`
 		*alias
 	}{alias: (*alias)(r)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	r.ID = rawID(aux.ID)
-	if cid := rawID(aux.ClusterID); cid != "" {
+	// The API spells this clusterId on some endpoints and clusterID on others;
+	// the aux tag must match exactly to shadow the embedded string field.
+	if cid := rawID(aux.ClusterIDLower); cid != "" {
+		r.ClusterID = cid
+	} else if cid := rawID(aux.ClusterIDUpper); cid != "" {
 		r.ClusterID = cid
 	}
 	if th := rawID(aux.Threshold); th != "" {
 		r.Threshold = th
+	}
+	if len(aux.Enabled) > 0 {
+		r.Enabled = rawBool(aux.Enabled)
 	}
 	if len(aux.Notifications) > 0 {
 		var list []string
