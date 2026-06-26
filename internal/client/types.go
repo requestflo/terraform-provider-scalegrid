@@ -279,17 +279,20 @@ type CloudProfile struct {
 	ConfigJSON string `json:"configJSON,omitempty"`
 }
 
-// UnmarshalJSON decodes a CloudProfile, converting the numeric id to a string.
+// UnmarshalJSON decodes a CloudProfile, converting the numeric id to a string
+// and tolerating a shared flag returned as a boolean or a string.
 func (p *CloudProfile) UnmarshalJSON(data []byte) error {
 	type alias CloudProfile
 	aux := struct {
-		ID json.RawMessage `json:"id"`
+		ID     json.RawMessage `json:"id"`
+		Shared json.RawMessage `json:"shared"`
 		*alias
 	}{alias: (*alias)(p)}
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
 	p.ID = rawID(aux.ID)
+	p.Shared = rawBool(aux.Shared)
 	return nil
 }
 
@@ -349,8 +352,9 @@ type CreateAWSCloudProfileInput struct {
 	EnableSSH          bool
 }
 
-// Backup represents a cluster backup. The API returns created as a string Unix
-// timestamp, and id/object_id as integers.
+// Backup represents a cluster backup. The API is inconsistent about whether
+// id/object_id and the created timestamp come back as integers or strings, so
+// all three are decoded leniently.
 type Backup struct {
 	ID       string `json:"id,omitempty"`
 	Name     string `json:"name,omitempty"`
@@ -360,13 +364,14 @@ type Backup struct {
 	Comment  string `json:"comment,omitempty"`
 }
 
-// UnmarshalJSON decodes a Backup, converting the numeric id and object_id to
-// strings.
+// UnmarshalJSON decodes a Backup, converting the numeric id, object_id and
+// created timestamp to strings.
 func (b *Backup) UnmarshalJSON(data []byte) error {
 	type alias Backup
 	aux := struct {
 		ID       json.RawMessage `json:"id"`
 		ObjectID json.RawMessage `json:"object_id"`
+		Created  json.RawMessage `json:"created"`
 		*alias
 	}{alias: (*alias)(b)}
 	if err := json.Unmarshal(data, &aux); err != nil {
@@ -374,6 +379,7 @@ func (b *Backup) UnmarshalJSON(data []byte) error {
 	}
 	b.ID = rawID(aux.ID)
 	b.ObjectID = rawID(aux.ObjectID)
+	b.Created = rawID(aux.Created)
 	return nil
 }
 

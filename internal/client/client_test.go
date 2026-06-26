@@ -400,6 +400,37 @@ func TestGetDatabaseVersions(t *testing.T) {
 	}
 }
 
+// TestLenientDecoding covers the response structs that must tolerate the API
+// returning numbers/strings interchangeably for the same field.
+func TestLenientDecoding(t *testing.T) {
+	// Backup: numeric id/object_id/created.
+	var b Backup
+	if err := json.Unmarshal([]byte(`{"id":42,"object_id":7,"created":1719440000,"name":"b1"}`), &b); err != nil {
+		t.Fatalf("backup: %v", err)
+	}
+	if b.ID != "42" || b.ObjectID != "7" || b.Created != "1719440000" {
+		t.Errorf("backup decoded wrong: %+v", b)
+	}
+
+	// CloudProfile: numeric id and string-valued shared flag.
+	var p CloudProfile
+	if err := json.Unmarshal([]byte(`{"id":1234,"shared":"true","providerMachinePoolName":"cp"}`), &p); err != nil {
+		t.Fatalf("cloud profile: %v", err)
+	}
+	if p.ID != "1234" || !p.Shared {
+		t.Errorf("cloud profile decoded wrong: %+v", p)
+	}
+
+	// AlertRule: numeric id/clusterId/threshold and boolean enabled.
+	var r AlertRule
+	if err := json.Unmarshal([]byte(`{"id":5,"clusterId":8038,"threshold":80,"enabled":true}`), &r); err != nil {
+		t.Fatalf("alert rule: %v", err)
+	}
+	if r.ID != "5" || r.ClusterID != "8038" || r.Threshold != "80" || !r.Enabled {
+		t.Errorf("alert rule decoded wrong: %+v", r)
+	}
+}
+
 func TestDBTypeHelpers(t *testing.T) {
 	if DBMongo.PathPrefix() != "MongoClusters" {
 		t.Errorf("path prefix: %s", DBMongo.PathPrefix())
