@@ -1,3 +1,11 @@
+## [2.2.1](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.2.0...v2.2.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* decode database versions returned as a JSON object ([8d38a04](https://github.com/requestflo/terraform-provider-scalegrid/commit/8d38a0415b81249c8687dd43a4f801d7d0975bbb))
+* decode database versions returned as a JSON object ([#13](https://github.com/requestflo/terraform-provider-scalegrid/issues/13)) ([b00d585](https://github.com/requestflo/terraform-provider-scalegrid/commit/b00d585a8bf22395cd4c757d3946ee257bc47b79))
+
 # [2.2.0](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.1.0...v2.2.0) (2026-06-25)
 
 
