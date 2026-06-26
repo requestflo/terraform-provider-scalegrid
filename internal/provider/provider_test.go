@@ -29,8 +29,8 @@ func TestProviderSchemaValid(t *testing.T) {
 func TestResourceSchemasValid(t *testing.T) {
 	p := New("test")().(*ScaleGridProvider)
 	ctors := p.Resources(context.Background())
-	if len(ctors) != 9 {
-		t.Errorf("expected 9 resources, got %d", len(ctors))
+	if len(ctors) != 10 {
+		t.Errorf("expected 10 resources, got %d", len(ctors))
 	}
 	for _, ctor := range ctors {
 		r := ctor()

@@ -122,6 +122,7 @@ func (p *ScaleGridProvider) Resources(_ context.Context) []func() resource.Resou
 		NewFirewallResource,
 		NewAlertRuleResource,
 		NewBackupResource,
+		NewBackupScheduleResource,
 		NewFollowerResource,
 	}
 }

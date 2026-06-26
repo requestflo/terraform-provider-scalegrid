@@ -97,9 +97,8 @@ func (c *Client) SetBackupSchedule(ctx context.Context, db DBType, clusterID str
 		op = "setClusterBackupSchedule"
 	}
 	path := "/" + db.listPrefix() + "/" + op
-	body := map[string]any{"id": clusterID}
+	body := map[string]any{"id": clusterID, "scheduledBackupEnabled": enabled}
 	if enabled {
-		body["scheduledBackupEnabled"] = true
 		body["backupIntervalInHours"] = intervalHours
 		body["backupHour"] = hour
 		body["backupScheduledBackupLimit"] = limit
