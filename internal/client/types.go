@@ -18,6 +18,16 @@ func rawID(raw json.RawMessage) string {
 	return s
 }
 
+// flexID is a string identifier that decodes from either a JSON number or a
+// quoted string, since the ScaleGrid API is inconsistent about which it returns
+// (e.g. action ids come back as bare integers).
+type flexID string
+
+func (f *flexID) UnmarshalJSON(data []byte) error {
+	*f = flexID(rawID(json.RawMessage(data)))
+	return nil
+}
+
 // rawBool decodes a JSON value that may be a boolean or a quoted string
 // ("true"/"yes"/"1") into a bool. Absent or unrecognised values yield false.
 func rawBool(raw json.RawMessage) bool {
@@ -404,7 +414,7 @@ type alertRuleCreateResponse struct {
 // returned at the top level of GET /actions/{id}, with the failure reason in the
 // standard "error" object.
 type Action struct {
-	ID        string  `json:"id,omitempty"`
+	ID        flexID  `json:"id,omitempty"`
 	Name      string  `json:"name,omitempty"`
 	Status    string  `json:"status,omitempty"`
 	Progress  int64   `json:"progress,omitempty"`

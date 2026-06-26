@@ -190,6 +190,29 @@ func TestWaitForAction(t *testing.T) {
 // TestWaitForActionTopLevel verifies the action status is read from the
 // top-level response fields (the shape documented in the OpenAPI spec), not only
 // from a nested "action" object.
+// TestWaitForActionNumericID verifies the action id is decoded when the API
+// returns it as a bare JSON number inside the nested "action" object.
+func TestWaitForActionNumericID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeEnvelope(w, map[string]any{"action": map[string]any{
+			"id": 12345, "status": ActionCompleted,
+		}})
+	}))
+	defer srv.Close()
+	c := newTestClient(t, srv)
+
+	action, err := c.GetAction(context.Background(), "12345")
+	if err != nil {
+		t.Fatalf("GetAction: %v", err)
+	}
+	if action.ID != "12345" {
+		t.Errorf("expected id 12345, got %q", action.ID)
+	}
+	if err := c.WaitForAction(context.Background(), "12345", time.Millisecond); err != nil {
+		t.Fatalf("WaitForAction: %v", err)
+	}
+}
+
 func TestWaitForActionTopLevel(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		writeEnvelope(w, map[string]any{"status": ActionCompleted, "progress": 100})
