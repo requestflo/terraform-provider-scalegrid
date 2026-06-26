@@ -1,3 +1,10 @@
+# [2.4.0](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.3.0...v2.4.0) (2026-06-26)
+
+
+### Features
+
+* add scalegrid_backup_schedule resource ([#16](https://github.com/requestflo/terraform-provider-scalegrid/issues/16)) ([df66f8f](https://github.com/requestflo/terraform-provider-scalegrid/commit/df66f8f42b37f7806c08494afd3581f2d84b4c3f))
+
 # [2.3.0](https://github.com/requestflo/terraform-provider-scalegrid/compare/v2.2.2...v2.3.0) (2026-06-26)
 
 
